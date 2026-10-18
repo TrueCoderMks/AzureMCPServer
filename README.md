@@ -74,19 +74,13 @@ The MCP audience is the `ENTRA_CLIENT_ID`. The server only accepts v2 delegated 
 
 ## Install and run
 
-Requires Python 3.10 or later.
+Requires Python 3.10 or later. From the repository root, start the server with one command:
 
 ```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev]"
-$env:ENTRA_TENANT_ID = "<tenant-guid>"
-$env:ENTRA_CLIENT_ID = "<api-app-client-guid>"
-$env:MSAL_CLIENT_SECRET = "<development-secret>"
-python -m entra_mcp_server
+py start_server.py
 ```
 
-`.env.example` documents all supported settings; it is not loaded automatically. On loopback, the server prompts for device-code sign-in before starting. In VS Code, connect to `entraDirectory` after the server is running; no access token needs to be copied into VS Code. For a remote deployment, set `MCP_STARTUP_AUTH=false`, set `MCP_PUBLIC_URL` to its HTTPS endpoint, configure `MCP_ALLOWED_HOSTS` with the actual host, and terminate TLS at a trusted ingress or serve HTTPS directly. Remote MCP clients must provide their own delegated Entra access tokens.
+The launcher checks for the runtime dependencies and installs the project with `pip install -e .` if any are missing. It then loads `.env` from the repository root; environment variables already set in the process take precedence. Copy `.env.example` to `.env` and fill in the Entra settings before starting. On loopback, the server prompts for device-code sign-in before starting. In VS Code, connect to `entraDirectory` after the server is running; no access token needs to be copied into VS Code. For a remote deployment, set `MCP_STARTUP_AUTH=false`, set `MCP_PUBLIC_URL` to its HTTPS endpoint, configure `MCP_ALLOWED_HOSTS` with the actual host, and terminate TLS at a trusted ingress or serve HTTPS directly. Remote MCP clients must provide their own delegated Entra access tokens.
 
 ### VS Code local test connection
 
@@ -95,8 +89,8 @@ Enable **Allow public client flows** on the app used for device-code sign-in, th
 ## Tests
 
 ```powershell
-python -m pip install -e ".[dev]"
-python -m pytest
+py -3.11 -m pip install -e ".[dev]"
+py -3.11 -m pytest
 ```
 
 Tests use generated test keys and mocked HTTP responses; they do not contact a tenant or Microsoft Graph.

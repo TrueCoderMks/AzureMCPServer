@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import os
 
-import uvicorn
-
-from entra_mcp_server.config import Settings
-from entra_mcp_server.local_auth import LocalEntraSession
-from entra_mcp_server.server import create_app
-
 
 def main() -> None:
+    from entra_mcp_server.bootstrap import ensure_dependencies, load_environment
+
+    ensure_dependencies()
+    load_environment()
+
+    import uvicorn
+
+    from entra_mcp_server.config import Settings
+    from entra_mcp_server.local_auth import LocalEntraSession
+    from entra_mcp_server.server import create_app
+
     settings = Settings.from_env()
     local_session = None
     if settings.startup_auth:

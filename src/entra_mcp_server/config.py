@@ -49,7 +49,7 @@ class Settings:
 
     @property
     def jwks_uri(self) -> str:
-        return f"{self.issuer}/discovery/v2.0/keys"
+        return f"https://login.microsoftonline.com/{self.tenant_id}/discovery/v2.0/keys"
 
     @property
     def graph_authority(self) -> str:

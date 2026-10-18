@@ -22,6 +22,9 @@ def test_settings_accepts_local_http_and_secret(monkeypatch: pytest.MonkeyPatch)
 
     assert settings.public_url == "http://127.0.0.1:8000/mcp"
     assert settings.issuer.endswith("/v2.0")
+    assert settings.jwks_uri == (
+        f"https://login.microsoftonline.com/{settings.tenant_id}/discovery/v2.0/keys"
+    )
     assert settings.startup_auth is True
     assert settings.public_client_id == settings.client_id
 

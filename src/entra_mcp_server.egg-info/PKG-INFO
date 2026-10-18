@@ -1,0 +1,129 @@
+Metadata-Version: 2.4
+Name: entra-mcp-server
+Version: 0.1.0
+Summary: An authenticated MCP server for Microsoft Entra ID directory operations.
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: mcp<3,>=2
+Requires-Dist: msal<2,>=1.31
+Requires-Dist: PyJWT[crypto]<3,>=2.10
+Requires-Dist: starlette<1,>=0.27
+Requires-Dist: uvicorn<1,>=0.30
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8; extra == "dev"
+Requires-Dist: pytest-asyncio<2,>=0.24; extra == "dev"
+
+# Microsoft Entra ID MCP Server
+
+Python MCP server for delegated Microsoft Entra ID directory access through Microsoft Graph. Local loopback use signs in once at server startup; Graph calls use the On-Behalf-Of (OBO) flow so Microsoft Graph applies the signed-in user's delegated permissions. Remote deployments retain per-client Microsoft Entra token validation.
+
+## Security model
+
+- Streamable HTTP only. The MCP Python SDK's HTTP authorization middleware validates every request before a tool runs and publishes Protected Resource Metadata. In local startup-auth mode, the server injects its startup-authenticated token only for requests from loopback clients.
+- Register a single-tenant API in Microsoft Entra ID. Configure it to issue v2 access tokens and expose delegated API scopes named `Entra.Read` and `Entra.Write`.
+- The server validates the token's RS256 signature using Entra's JWKS, plus tenant, issuer, audience, token version, expiry, and delegated `scp` claims. App-only tokens are rejected.
+- Read tools require `Entra.Read`; mutations and deletes also require `Entra.Write`. Microsoft Graph is called with per-operation delegated scopes, not application permissions.
+- Delete tools require `confirm=true` and a specific object UUID. Bulk deletion is not exposed.
+- The server never logs access tokens. Credential properties in Graph responses are redacted.
+- Startup-auth mode is restricted to loopback bind/public addresses and loopback peers. Any local process able to reach the endpoint uses the signed-in user's identity; do not use this mode on a shared or remote host.
+- Local HTTP is permitted only for loopback development. Non-loopback public URLs must use HTTPS. Configure the MCP SDK host allowlist for the hostname actually used.
+
+An authenticated caller still needs sufficient Microsoft Graph delegated permissions and any required Entra directory role. Graph permissions and administrative consent are tenant-level configuration; the server does not grant them.
+
+## Tools
+
+| Resource | Read tools | Write tools |
+| --- | --- | --- |
+| Users | `list_users`, `get_user` | `create_user`, `update_user`, `delete_user` |
+| Groups | `list_groups`, `get_group`, `list_group_members` | `create_group`, `update_group`, `delete_group`, `add_group_member`, `remove_group_member` |
+| App registrations | `list_applications`, `get_application` | `create_application`, `update_application`, `delete_application` |
+| Service principals | `list_service_principals`, `get_service_principal` | `create_service_principal`, `update_service_principal`, `delete_service_principal` |
+
+Lists accept `$top` via `top` (1-999), plus optional Graph `select` and `filter_expression` where shown. Object IDs must be UUIDs. Create and update tools accept Microsoft Graph request bodies; consult Graph's resource documentation for required properties.
+
+## Microsoft Entra setup
+
+1. Register a single-tenant app for the MCP API. Set the access-token version to v2.0 and expose delegated scopes `Entra.Read` and `Entra.Write`.
+2. Enable **Allow public client flows** on an app registration used for device-code sign-in. For a single-app setup, the MCP API registration can also be the public client; a separate public-client registration is optional. The public client needs delegated consent for `Entra.Read` (and `Entra.Write` only if needed).
+3. Configure the API registration as a confidential client for OBO. Prefer a certificate credential for production; a client secret may be used for local development. Keep credentials in a secret manager or protected deployment configuration, never in source control.
+4. Add only the required **delegated** Microsoft Graph permissions and grant tenant admin consent as required. The server requests operation-specific scopes:
+
+   | Operation | Graph delegated permission |
+   | --- | --- |
+   | Read users | `User.Read.All` |
+   | Create, update, delete users | `User.ReadWrite.All` |
+   | Read groups | `Group.Read.All` |
+   | Create, update, delete groups | `Group.ReadWrite.All` |
+   | Read group members | `GroupMember.Read.All` |
+   | Add or remove group members | `GroupMember.ReadWrite.All` |
+   | Read applications and service principals | `Application.Read.All` |
+   | Create, update, delete applications and service principals | `Application.ReadWrite.All` |
+
+   Microsoft Graph may require additional user role assignments for specific operations. Review each endpoint's permission and role requirements before granting consent.
+5. Set the MCP API registration's client ID and the tenant ID in the server environment. The client secret or certificate belongs to the confidential API app used for OBO.
+
+## Configuration
+
+Copy `.env.example` to a local environment file or inject the values into the process through a secret manager. The server does not load `.env` files automatically.
+
+Required:
+
+- `ENTRA_TENANT_ID`: workforce tenant ID (UUID).
+- `ENTRA_CLIENT_ID`: API app registration's client ID (UUID).
+- `ENTRA_TEST_CLIENT_ID`: optional public-client registration used for local startup sign-in; defaults to `ENTRA_CLIENT_ID`.
+- `ENTRA_API_APP_ID_URI`: optional API identifier URI; defaults to `api://<ENTRA_CLIENT_ID>`.
+- Exactly one server credential:
+  - `MSAL_CLIENT_SECRET`, or
+  - both `MSAL_CERTIFICATE_PATH` and `MSAL_CERTIFICATE_THUMBPRINT`.
+
+Optional:
+
+- `MCP_STARTUP_AUTH`: defaults to `true` when `MCP_HOST` is loopback, otherwise `false`. Startup authentication is loopback-only. Set it to `false` to require an Entra bearer token from each client.
+- `ENTRA_MCP_SCOPES`: local startup scopes; defaults to `Entra.Read`. Include `Entra.Write` only when the public client has that delegated API scope and write operations are intended.
+- `MCP_PUBLIC_URL`: exact client-facing endpoint; defaults to `http://127.0.0.1:8000/mcp`.
+- `MCP_HOST` / `MCP_PORT`: bind address and port.
+- `MCP_ALLOWED_HOSTS`: comma-separated MCP SDK Host allowlist; defaults to loopback hosts.
+- `MCP_ALLOWED_ORIGINS`: comma-separated browser origins; leave empty if not needed.
+
+The MCP audience is the `ENTRA_CLIENT_ID`. The server only accepts v2 delegated tokens for the configured tenant and that audience.
+
+## Install and run
+
+Requires Python 3.10 or later.
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e ".[dev]"
+$env:ENTRA_TENANT_ID = "<tenant-guid>"
+$env:ENTRA_CLIENT_ID = "<api-app-client-guid>"
+$env:MSAL_CLIENT_SECRET = "<development-secret>"
+python -m entra_mcp_server
+```
+
+`.env.example` documents all supported settings; it is not loaded automatically. On loopback, the server prompts for device-code sign-in before starting. In VS Code, connect to `entraDirectory` after the server is running; no access token needs to be copied into VS Code. For a remote deployment, set `MCP_STARTUP_AUTH=false`, set `MCP_PUBLIC_URL` to its HTTPS endpoint, configure `MCP_ALLOWED_HOSTS` with the actual host, and terminate TLS at a trusted ingress or serve HTTPS directly. Remote MCP clients must provide their own delegated Entra access tokens.
+
+### VS Code local test connection
+
+Enable **Allow public client flows** on the app used for device-code sign-in, then start the server with its tenant ID, API client ID, and OBO secret/certificate configured. At startup, follow the device-code prompt in the terminal. The in-memory MSAL cache refreshes access tokens silently; if consent or sign-in must be renewed interactively, restart the server and complete a new device-code sign-in. The VS Code MCP server configuration does not store or prompt for bearer tokens.
+
+## Tests
+
+```powershell
+python -m pip install -e ".[dev]"
+python -m pytest
+```
+
+Tests use generated test keys and mocked HTTP responses; they do not contact a tenant or Microsoft Graph.
+
+## References
+
+- [Microsoft Entra app registration](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app)
+- [Microsoft identity platform authorization code flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow)
+- [Microsoft identity platform access tokens](https://learn.microsoft.com/en-us/entra/identity-platform/access-tokens)
+- [Microsoft identity platform On-Behalf-Of flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-on-behalf-of-flow)
+- [MSAL for Python](https://learn.microsoft.com/en-us/entra/msal/python/)
+- [Microsoft Graph permissions reference](https://learn.microsoft.com/en-us/graph/permissions-reference)
+- [MCP authorization specification](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization)
+- [Official MCP Python SDK authorization guide](https://py.sdk.modelcontextprotocol.io/run/authorization/)

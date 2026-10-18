@@ -1,0 +1,10 @@
+httpx<1,>=0.27
+mcp<3,>=2
+msal<2,>=1.31
+PyJWT[crypto]<3,>=2.10
+starlette<1,>=0.27
+uvicorn<1,>=0.30
+
+[dev]
+pytest<9,>=8
+pytest-asyncio<2,>=0.24

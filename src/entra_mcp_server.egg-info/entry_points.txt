@@ -1,0 +1,2 @@
+[console_scripts]
+entra-mcp-server = entra_mcp_server.main:main
